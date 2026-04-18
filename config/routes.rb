@@ -4,6 +4,10 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       resources :subscriptions, only: [ :create ]
+
+      namespace :webhooks do
+        resource :apple, only: [ :create ]
+      end
     end
   end
 end
