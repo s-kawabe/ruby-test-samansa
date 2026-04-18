@@ -9,12 +9,18 @@ module Api
 
         if upsertable?(subscription)
           subscription.assign_attributes(subscription_params.merge(store: DEFAULT_STORE, status: PROVISIONAL_STATUS))
-          unless subscription.save
-            render json: { errors: subscription.errors.full_messages }, status: :unprocessable_entity
-            return
-          end
+        else
+          subscription.user_id = subscription_params[:user_id]
         end
 
+        unless subscription.save
+          render json: { errors: subscription.errors.full_messages }, status: :unprocessable_entity
+          return
+        end
+
+        render json: { status: subscription.status }, status: :created
+      rescue ActiveRecord::RecordNotUnique
+        subscription = Subscription.find_by!(transaction_id: subscription_params[:transaction_id])
         render json: { status: subscription.status }, status: :created
       end
 

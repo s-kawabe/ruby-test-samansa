@@ -3,7 +3,9 @@ module Api
     module Users
       class SubscriptionsController < ApplicationController
         def show
-          subscription = Subscription.find_by(user_id: params[:user_id])
+          subscription = Subscription.where(user_id: params[:user_id])
+                                     .order(expires_date: :desc)
+                                     .first
           render json: serialize(subscription)
         end
 

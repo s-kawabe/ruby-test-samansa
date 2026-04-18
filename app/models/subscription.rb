@@ -9,4 +9,5 @@ class Subscription < ApplicationRecord
   validates :product_id, presence: true
   validates :store, presence: true
   validates :status, presence: true, inclusion: { in: STATUSES }
+  validates :expires_date, presence: true, if: -> { %w[active cancelled].include?(status) }
 end
