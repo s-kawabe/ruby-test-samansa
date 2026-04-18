@@ -1,7 +1,7 @@
 class SubscriptionEvent < ApplicationRecord
   EVENT_TYPES = %w[PURCHASE RENEW CANCEL].freeze
 
-  self.ignored_columns += ["updated_at"]
+  self.ignored_columns += [ "updated_at" ]
 
   belongs_to :subscription
 

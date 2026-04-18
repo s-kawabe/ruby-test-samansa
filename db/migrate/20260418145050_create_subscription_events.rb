@@ -12,6 +12,6 @@ class CreateSubscriptionEvents < ActiveRecord::Migration[8.1]
       t.datetime :created_at, null: false
     end
 
-    add_index :subscription_events, [:subscription_id, :occurred_at]
+    add_index :subscription_events, [ :subscription_id, :occurred_at ]
   end
 end
