@@ -301,6 +301,8 @@ sequenceDiagram
 
 ## 2. 課金状態遷移
 
+これは `subscriptions.status` カラムの値の遷移を表す。`provisional` / `active` / `cancelled` の3値が実際に DB に保存される。`expired` は DB に保存されない論理状態で、`status = 'cancelled' AND expires_date < NOW()` の条件を満たしたときに動的に導出される。
+
 ```mermaid
 stateDiagram-v2
     [*] --> provisional: クライアントAPI受信<br/>POST /api/v1/subscriptions
@@ -309,24 +311,27 @@ stateDiagram-v2
     active --> active: Webhook RENEW<br/>（expires_date 延長）
     active --> cancelled: Webhook CANCEL
 
-    cancelled --> expired: expires_date 経過
+    cancelled --> expired: expires_date 経過（論理状態・DB値なし）
 
     note right of provisional
         視聴不可
+        subscriptions.status = 'provisional'
     end note
 
     note right of active
         視聴可能
-        expires_date > NOW()
+        subscriptions.status = 'active'
     end note
 
     note right of cancelled
         expires_date まで視聴可能
-        status=cancelled かつ expires_date > NOW()
+        subscriptions.status = 'cancelled'
     end note
 
     note right of expired
         視聴不可
+        DBステータスは 'cancelled' のまま
+        expires_date < NOW() で判定
     end note
 ```
 
