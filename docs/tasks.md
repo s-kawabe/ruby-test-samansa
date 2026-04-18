@@ -49,11 +49,13 @@ PR1（セットアップ）
 ## PR2: DB マイグレーション & モデル定義
 
 - スキーマ詳細は [design.md](./design.md) の「データベーススキーマ」節に従う
-- `subscriptions`（`store` 列を含む。既定 `apple`）
+- `plans`（`product_id` を主キー。`name`, `billing_period_months`, `base_price`, `currency`, `active` を含む）
+- `subscriptions`（`store` 列を含む。既定 `apple`。`amount` / `currency` / `purchase_date` は持たない）
 - `webhook_logs`（`notification_type`, `processing_status`, `raw_payload` 等）
-- `subscription_events`（`payload_snapshot` は任意）
+- `subscription_events`（`amount`, `currency`, `purchase_date`, `expires_date` を直接カラムとして持つ。`payload_snapshot` は不要）
 - 各モデルのバリデーション・インデックス設計
 - `status` の状態遷移ルール（`provisional` / `active` / `cancelled`）
+- `subscriptions.product_id` は `plans.product_id` への FK とする
 - 他ストア Webhook を足しやすいよう、ストア種別や外部 ID を拡張しやすい列・命名を検討する（必須実装ではなく設計余地として）
 
 ---
@@ -92,7 +94,9 @@ PR1（セットアップ）
 - `expired` バッチは作らず動的判定で代替（`expires_date` と現在時刻の比較。design.md §2 の expired 相当）
 - 判定ロジック：`status IN ('active', 'cancelled') AND expires_date > NOW()`
 - レスポンス：`{ viewable: bool, status: string, expires_at: datetime }`（design.md に準拠）
+- サブスクリプションが存在しない場合は `{ viewable: false, status: null, expires_at: null }` を返す
 - `provisional` は視聴不可、`active` / `cancelled` かつ期限内は可、期限切れ後は不可のテスト
+- サブスクリプションなし（`status: null`）の場合のテストも追加する
 
 ---
 
