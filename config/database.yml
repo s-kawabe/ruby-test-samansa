@@ -1,0 +1,33 @@
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
+  host: <%= ENV.fetch("DB_HOST") { "localhost" } %>
+  port: <%= ENV.fetch("DB_PORT") { 5432 } %>
+  username: <%= ENV.fetch("DB_USERNAME") { "" } %>
+  password: <%= ENV.fetch("DB_PASSWORD") { "" } %>
+
+development:
+  <<: *default
+  database: <%= ENV.fetch("DB_NAME") { "ruby_test_samansa_development" } %>
+
+test:
+  <<: *default
+  database: <%= ENV.fetch("DB_NAME") { "ruby_test_samansa_test" } %>
+
+production:
+  primary: &primary_production
+    <<: *default
+    database: <%= ENV.fetch("DB_NAME") { "ruby_test_samansa_production" } %>
+  cache:
+    <<: *primary_production
+    database: <%= ENV.fetch("DB_CACHE_NAME") { "ruby_test_samansa_production_cache" } %>
+    migrations_paths: db/cache_migrate
+  queue:
+    <<: *primary_production
+    database: <%= ENV.fetch("DB_QUEUE_NAME") { "ruby_test_samansa_production_queue" } %>
+    migrations_paths: db/queue_migrate
+  cable:
+    <<: *primary_production
+    database: <%= ENV.fetch("DB_CABLE_NAME") { "ruby_test_samansa_production_cable" } %>
+    migrations_paths: db/cable_migrate
