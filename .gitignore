@@ -1,0 +1,21 @@
+# Ignore bundler config
+/.bundle
+
+# Ignore all environment files
+/.env*
+!/env.example
+
+# Ignore master key
+/config/master.key
+/config/credentials/*.key
+
+# Ignore tmp and log
+/tmp/
+/log/*.log
+/storage/
+
+# Ignore node modules
+/node_modules/
+
+# Ignore test coverage
+/coverage/
