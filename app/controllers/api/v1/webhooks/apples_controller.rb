@@ -3,9 +3,6 @@ module Api
     module Webhooks
       class ApplesController < ApplicationController
         def create
-          existing = WebhookLog.find_by(notification_uuid: webhook_params[:notification_uuid])
-          return head :ok if existing
-
           webhook_log = WebhookLog.create!(
             notification_uuid: webhook_params[:notification_uuid],
             notification_type: webhook_params[:type],
@@ -13,8 +10,12 @@ module Api
             raw_payload: request.request_parameters,
             processing_status: "pending"
           )
-
           AppleWebhookProcessorJob.perform_later(webhook_log.id)
+          head :ok
+        rescue ActiveRecord::RecordNotUnique
+          head :ok
+        rescue ActiveRecord::RecordInvalid => e
+          raise unless e.record.errors[:notification_uuid].any?
           head :ok
         end
 

@@ -24,7 +24,7 @@ class AppleWebhookProcessorJob < ApplicationJob
   def process_purchase(payload)
     subscription = Subscription.find_or_initialize_by(transaction_id: payload[:transaction_id])
     subscription.assign_attributes(
-      user_id: subscription.user_id.presence || payload[:transaction_id],
+      user_id: subscription.user_id.presence || "webhook_first:#{payload[:transaction_id]}",
       product_id: payload[:product_id],
       status: "active",
       expires_date: payload[:expires_date]

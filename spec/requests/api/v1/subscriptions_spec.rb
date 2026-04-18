@@ -60,7 +60,7 @@ RSpec.describe "POST /api/v1/subscriptions", type: :request do
 
   describe "Webhook先着ケース（同一 transaction_id が既に active の場合）" do
     before do
-      create(:subscription, transaction_id: "txn_abc123", product_id: plan.product_id, status: "active")
+      create(:subscription, transaction_id: "txn_abc123", product_id: plan.product_id, status: "active", expires_date: 1.month.from_now)
     end
 
     it "201 Created と status: active を返す（provisional に戻さない）" do
@@ -80,7 +80,7 @@ RSpec.describe "POST /api/v1/subscriptions", type: :request do
 
   describe "Webhook先着ケース（同一 transaction_id が cancelled の場合）" do
     before do
-      create(:subscription, transaction_id: "txn_abc123", product_id: plan.product_id, status: "cancelled")
+      create(:subscription, transaction_id: "txn_abc123", product_id: plan.product_id, status: "cancelled", expires_date: 1.month.from_now)
     end
 
     it "201 Created と status: cancelled を返す（provisional に戻さない）" do
