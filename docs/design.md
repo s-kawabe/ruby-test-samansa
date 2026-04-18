@@ -122,7 +122,6 @@ erDiagram
 
 **備考**
 
-- `payload_snapshot jsonb` は持たない。生のペイロードが必要な場合は `webhook_logs.raw_payload` を参照する。
 - レコードの更新・削除は行わない。誤ったレコードが作成された場合は補正イベントを追記する。
 
 ---
