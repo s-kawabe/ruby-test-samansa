@@ -26,7 +26,7 @@ erDiagram
     bigint id PK
     string user_id
     string transaction_id UK
-    string product_id FK
+    string product_id FK　b
     string store
     string status
     timestamptz expires_date
@@ -155,7 +155,8 @@ erDiagram
 ### POST /api/v1/subscriptions
 
 - **目的**: アプリ内課金完了直後に決済情報をサーバーへ送り、サブスクリプションを仮開始状態で登録する（Webhook 到着前の状態を記録する）。
-- **呼び出し元**: クライアント
+- **呼び出し元**: クライアント（**初回購入時のみ**）
+- **備考**: RENEW（自動更新）と CANCEL（解約）はユーザーが Apple の設定画面から操作し、Apple が直接 Webhook でサーバーに通知する。アプリがこのエンドポイントを叩くのは初回購入時の1回のみ。
 
 **リクエストボディ**
 
