@@ -51,3 +51,35 @@
 - amount / currency: 課金金額と通貨
 - purchase_date: 現在のサブスクリプション期間の開始日時
 - expires_date: 次回更新またはサブスクリプション終了日時
+
+# s-kawabe's NOTE
+
+## 設計の概要
+
+## 工夫したポイント
+
+## 追加仕様
+
+### 視聴権限確認 API
+
+README の仕様には含まれていないが、動画配信サービスとして必須であると判断してエンドポイントとして追加した。
+
+`GET /api/v1/users/:user_id/subscription`
+
+```json
+{
+  "viewable": true,
+  "status": "active",
+  "expires_at": "2025-11-01T12:00:00Z"
+}
+```
+
+- viewable: `status IN ('active', 'cancelled') AND expires_date > NOW()` で動的に判定。`expired` ステータスはDBに保存しない（`expired` という状態を持つことで、対象データの状態更新と実際の `expires_date` との間に不整合が起きる可能性があるため）
+- status: サブスクリプションの現在ステータス（`provisional` / `active` / `cancelled`）
+- expires_at: 有効期限。`cancelled` の場合は視聴可能期限として使用する
+
+### `store` カラム（subscriptions テーブル）
+
+README の仕様には含まれていないが、将来の Google Play 等への拡張性を考慮して `store` カラムを追加した（既定値: `apple`）。
+
+課金ストアによって Webhook のペイロード形式・処理ロジックが異なるため、ストア種別を記録しておくことで複数ストア対応時の分岐・分析を容易にする。
