@@ -2,15 +2,7 @@
 
 ## データベーススキーマ
 
-RDBMS は PostgreSQL を想定する。時刻はすべて `timestamptz`（UTC 保存）とする。
-
-### テーブルの役割分担
-
-| テーブル | 役割 | 主な利用者 |
-|---------|------|-----------|
-| `subscriptions` | ユーザーの現在の契約状態（リアルタイム参照用） | アプリ（視聴権限チェック） |
-| `subscription_events` | 課金イベントの不変な履歴（分析・監査用） | ビジネス分析（MRR・チャーン率等） |
-| `webhook_logs` | Apple Webhook の受信ログ（冪等性・障害調査用） | 運用・デバッグ |
+RDBMS は PostgreSQL を想定する。
 
 ### ER 概要
 
@@ -60,11 +52,7 @@ erDiagram
 
 ### `subscriptions`
 
-**役割**: ユーザーの現在の契約状態を保持する。アプリが視聴権限を判定する際にリアルタイムで参照するテーブル。Webhook を受信するたびに最新値で上書きされるため、常に「今の状態」を表す。
-
-**利用例**:
-- `GET /api/v1/users/:user_id/subscription` での視聴可否判定
-- 管理画面での現在の契約状態確認
+サブスクリプションの現在状態を表す。同一 `transaction_id` はアプリ内で一意（自動更新でも不変）。
 
 | カラム | 型 | NULL | 説明 |
 |---|---|---|---|
@@ -74,9 +62,9 @@ erDiagram
 | `product_id` | `string` | NO | プラン ID |
 | `store` | `string` | NO | 課金ストア。既定値 `apple`（将来の Google Play 等の判別用） |
 | `status` | `string` | NO | `provisional` / `active` / `cancelled` |
-| `purchase_date` | `timestamptz` | YES | 直近課金期間の開始日時（Webhook 受信時に上書き） |
-| `expires_date` | `timestamptz` | YES | 次回更新日または終了日時（Webhook 受信時に上書き） |
-| `amount` | `decimal(12, 4)` | YES | 直近通知の課金額（Webhook 受信時に上書き） |
+| `purchase_date` | `timestamptz` | YES | 現在の課金期間の開始（Webhook で更新） |
+| `expires_date` | `timestamptz` | YES | 次回更新日または終了日時 |
+| `amount` | `decimal(12, 4)` | YES | 直近通知の課金額（分析用） |
 | `currency` | `string(3)` | YES | ISO 4217（例: USD） |
 | `created_at` | `timestamptz` | NO | |
 | `updated_at` | `timestamptz` | NO | |
@@ -88,18 +76,33 @@ erDiagram
 
 **備考**
 
-- `expired` ステータスは DB に持たない。`expires_date > NOW()` との組み合わせで動的に導出する。バッチ更新を不要にし、判定に時間的なラグが生じないようにするための設計判断。
-- `amount` / `currency` / `purchase_date` / `expires_date` は最新値のみ保持する。過去の請求履歴は `subscription_events` を参照する。
+- `expired` は DB に持たない。`expires_date` と現在時刻の比較で導出する（状態遷移図の `expired` は論理状態）。
+
+### `webhook_logs`
+
+受信した Apple Webhook の受付・冪等性・処理状態を記録する。`notification_uuid` で重複受信を検知する。
+
+| カラム | 型 | NULL | 説明 |
+|---|---|---|---|
+| `id` | `bigint` | NO | 主キー |
+| `notification_uuid` | `string` | NO | 通知ごとに一意（冪等キー） |
+| `notification_type` | `string` | NO | `PURCHASE` / `RENEW` / `CANCEL`（JSON の `type` に対応） |
+| `transaction_id` | `string` | YES | ペイロードから抽出。トラブルシュート用 |
+| `raw_payload` | `jsonb` | NO | 受信ボディのスナップショット |
+| `processing_status` | `string` | NO | 例: `pending` / `processed` / `failed` |
+| `error_message` | `text` | YES | ジョブ失敗時のメッセージ |
+| `created_at` | `timestamptz` | NO | |
+| `updated_at` | `timestamptz` | NO | |
+
+**インデックス**
+
+- `UNIQUE (notification_uuid)`
 
 ### `subscription_events`
 
-**役割**: 課金ライフサイクルのイベントを追記専用（Append-only）で記録する分析テーブル。`subscriptions` は最新状態を上書きするため過去の値が失われるが、このテーブルにより全イベントの時系列が保持される。
+課金イベントの不変な履歴（分析・監査用）。Append-only で記録し、更新・削除は行わない。`subscriptions` は最新値で上書きされるため過去の請求履歴が消えるが、このテーブルで全イベントの時系列を保持する。
 
-**利用例**:
-- MRR（月次経常収益）の算出: 月別の PURCHASE / RENEW の `amount` を集計
-- チャーン率の分析: 月別の CANCEL 件数を集計
-- 平均継続期間の算出: PURCHASE から CANCEL までのイベント間隔を計算
-- プラン別収益の比較: `product_id` と `amount` のクロス集計
+**利用例**: MRR（月次経常収益）算出・チャーン率分析・平均継続期間の算出・プラン別収益比較
 
 | カラム | 型 | NULL | 説明 |
 |---|---|---|---|
@@ -119,33 +122,8 @@ erDiagram
 
 **備考**
 
-- レコードの更新・削除は行わない。障害やリトライで誤ったレコードが作成された場合は補正イベントを追記する。
 - `payload_snapshot jsonb` は持たない。生のペイロードが必要な場合は `webhook_logs.raw_payload` を参照する。
-
-### `webhook_logs`
-
-**役割**: Apple から受信した Webhook の生ログを記録する運用テーブル。主な目的は2つ。①`notification_uuid` によるべき等性の保証（同一通知の二重処理防止）、②Webhook 処理失敗時のトラブルシューティング。
-
-**利用例**:
-- 冪等性チェック: 受信時に `notification_uuid` の存在確認 → 重複受信をスキップ
-- 障害調査: `processing_status = 'failed'` のレコードから `error_message` と `raw_payload` を確認
-- 処理遅延の監視: `created_at` と `updated_at` の差分でジョブの処理時間を把握
-
-| カラム | 型 | NULL | 説明 |
-|---|---|---|---|
-| `id` | `bigint` | NO | 主キー |
-| `notification_uuid` | `string` | NO | 通知ごとに一意（冪等キー） |
-| `notification_type` | `string` | NO | `PURCHASE` / `RENEW` / `CANCEL`（JSON の `type` に対応） |
-| `transaction_id` | `string` | YES | ペイロードから抽出。障害調査時の検索用 |
-| `raw_payload` | `jsonb` | NO | 受信ボディ全体のスナップショット |
-| `processing_status` | `string` | NO | `pending`（受信直後）/ `processed`（処理完了）/ `failed`（エラー） |
-| `error_message` | `text` | YES | ジョブ失敗時のエラーメッセージ |
-| `created_at` | `timestamptz` | NO | Webhook 受信日時 |
-| `updated_at` | `timestamptz` | NO | 処理ステータス更新日時 |
-
-**インデックス**
-
-- `UNIQUE (notification_uuid)` — 冪等性チェックの高速化
+- レコードの更新・削除は行わない。誤ったレコードが作成された場合は補正イベントを追記する。
 
 ---
 
