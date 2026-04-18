@@ -51,3 +51,11 @@
 - amount / currency: 課金金額と通貨
 - purchase_date: 現在のサブスクリプション期間の開始日時
 - expires_date: 次回更新またはサブスクリプション終了日時
+
+# s-kawabe's NOTE
+
+## 設計の概要
+
+## 工夫したポイント
+
+## 追加仕様
