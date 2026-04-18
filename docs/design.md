@@ -8,19 +8,28 @@ RDBMS は PostgreSQL を想定する。
 
 ```mermaid
 erDiagram
+  plans ||--o{ subscriptions : has
   subscriptions ||--o{ subscription_events : has
+
+  plans {
+    string product_id PK
+    string name
+    int billing_period_months
+    decimal base_price
+    string currency
+    boolean active
+    timestamptz created_at
+    timestamptz updated_at
+  }
 
   subscriptions {
     bigint id PK
     string user_id
     string transaction_id UK
-    string product_id
+    string product_id FK
     string store
     string status
-    timestamptz purchase_date
     timestamptz expires_date
-    decimal amount
-    string currency
     timestamptz created_at
     timestamptz updated_at
   }
@@ -50,22 +59,34 @@ erDiagram
   }
 ```
 
+### `plans`
+
+プランのマスタテーブル。`product_id` を主キーとし、Apple に登録したサブスクリプションプランの情報を管理する。プランの追加はこのテーブルへのレコード挿入のみで対応でき、コード変更は不要。
+
+| カラム | 型 | NULL | 説明 |
+|---|---|---|---|
+| `product_id` | `string` | NO | 主キー。Apple の product ID（例: `com.samansa.subscription.monthly`） |
+| `name` | `string` | NO | 表示名（例: 月額プラン） |
+| `billing_period_months` | `integer` | NO | 請求周期（月額=1, 年額=12） |
+| `base_price` | `decimal(12, 4)` | NO | 標準価格 |
+| `currency` | `string(3)` | NO | ISO 4217（例: USD） |
+| `active` | `boolean` | NO | 販売中かどうか（廃止プランの論理削除用、既定値 `true`） |
+| `created_at` | `timestamptz` | NO | |
+| `updated_at` | `timestamptz` | NO | |
+
 ### `subscriptions`
 
-サブスクリプションの現在状態を表す。同一 `transaction_id` はアプリ内で一意（自動更新でも不変）。
+ユーザーの現在の契約状態を保持する。視聴権限の判定にリアルタイムで参照するテーブル。課金額・請求期間の開始日時は `subscription_events` に委譲し、このテーブルは契約の「今の状態」だけを持つ。
 
 | カラム | 型 | NULL | 説明 |
 |---|---|---|---|
 | `id` | `bigint` | NO | 主キー |
-| `user_id` | `string` | NO | ユーザー識別子（API の `user_id` と同一） |
+| `user_id` | `string` | NO | ユーザー識別子 |
 | `transaction_id` | `string` | NO | Apple 課金トランザクション ID（一意） |
-| `product_id` | `string` | NO | プラン ID |
+| `product_id` | `string` | NO | `plans.product_id` への FK |
 | `store` | `string` | NO | 課金ストア。既定値 `apple`（将来の Google Play 等の判別用） |
 | `status` | `string` | NO | `provisional` / `active` / `cancelled` |
-| `purchase_date` | `timestamptz` | YES | 現在の課金期間の開始（Webhook で更新） |
-| `expires_date` | `timestamptz` | YES | 次回更新日または終了日時 |
-| `amount` | `decimal(12, 4)` | YES | 直近通知の課金額（分析用） |
-| `currency` | `string(3)` | YES | ISO 4217（例: USD） |
+| `expires_date` | `timestamptz` | YES | 次回更新日または終了日時（視聴権限判定に使用） |
 | `created_at` | `timestamptz` | NO | |
 | `updated_at` | `timestamptz` | NO | |
 
@@ -76,7 +97,8 @@ erDiagram
 
 **備考**
 
-- `expired` は DB に持たない。`expires_date` と現在時刻の比較で導出する（状態遷移図の `expired` は論理状態）。
+- `amount` / `currency` / `purchase_date` は持たない。プランの標準価格は `plans`、実際の課金履歴は `subscription_events` を参照する。
+- `expired` は DB に持たない。`expires_date > NOW()` との組み合わせで動的に導出する。
 
 ### `webhook_logs`
 
