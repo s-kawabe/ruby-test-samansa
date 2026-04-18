@@ -34,6 +34,8 @@ begin
   ActiveRecord::Migration.maintain_test_schema!
 rescue ActiveRecord::PendingMigrationError => e
   abort e.to_s.strip
+rescue ActiveRecord::NoDatabaseError, ActiveRecord::StatementInvalid
+  # schema.rb not yet generated; safe to skip before first migration
 end
 RSpec.configure do |config|
   config.include FactoryBot::Syntax::Methods
