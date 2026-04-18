@@ -156,8 +156,9 @@ erDiagram
 
 - **目的**: アプリ内課金完了直後に決済情報をサーバーへ送り、サブスクリプションを仮開始状態で登録する（Webhook 到着前の状態を記録する）。
 - **呼び出し元**: クライアント（**初回購入時のみ**）
-- **備考**: RENEW（自動更新）と CANCEL（解約）はユーザーが Apple の設定画面から操作し、Apple が直接 Webhook でサーバーに通知する。アプリがこのエンドポイントを叩くのは初回購入時の1回のみ。
-- **このエンドポイントが必要な理由**: Apple Webhook だけで要件は満たせるが、①「決済完了済みだが Webhook 未着」という状態を DB に記録して運用・障害検知に活用する、②本来はここで Apple のレシート検証 API を叩いて `transaction_id` の正当性を確認する（本プロジェクトはスコープ外）、という2つの目的がある。
+- **備考**: 
+  - Apple Webhook だけで要件は満たせるが、①「決済完了済みだが Webhook 未着」という状態を DB に記録して運用・障害検知に活用する、②本来はここで Apple のレシート検証 API を叩いて `transaction_id` の正当性を確認する（本プロジェクトはスコープ外）、という2つの目的がある。
+  - RENEW（自動更新）と CANCEL（解約）はユーザーが Apple の設定画面から操作し、Apple が直接 Webhook でサーバーに通知する。アプリがこのエンドポイントを叩くのは初回購入時の1回のみ。
 
 **リクエストボディ**
 
@@ -209,6 +210,15 @@ erDiagram
 
 - **目的**: コンテンツ視聴前に、当該ユーザーのサブスクリプションが視聴可能かを返す。
 - **呼び出し元**: クライアント（動画再生前など）
+- **呼び出しタイミング**:
+  - アプリ起動時（コンテンツ一覧の視聴可否表示）
+  - 動画再生ボタンタップ時（再生可否の最終判定）
+  - 購入完了後のポーリング（Webhook 処理完了を待つ間）
+- **レスポンスに応じたクライアントの挙動**:
+  - `viewable: true` → 再生を許可する
+  - `viewable: false` + `status: provisional` → 「決済処理中」を表示してポーリング継続
+  - `viewable: false` + `status: cancelled` → 「有効期限が切れました」を表示して課金導線へ
+  - `viewable: false` + `status: null`（サブスクリプションなし） → 課金導線へ
 
 **レスポンスボディ（例）**
 
@@ -223,14 +233,14 @@ erDiagram
 | フィールド | 説明 |
 |---|---|
 | viewable | 視聴可否（`status IN ('active', 'cancelled') AND expires_date > NOW()`） |
-| status | サブスクリプションの現在ステータス |
-| expires_at | 有効期限（`cancelled` の場合は視聴可能期限） |
+| status | サブスクリプションの現在ステータス。サブスクリプションが存在しない場合は `null` |
+| expires_at | 有効期限（`cancelled` の場合は視聴可能期限）。サブスクリプションが存在しない場合は `null` |
 
 ---
 
 ## ワークフロー
 
-### 1. 正常系シーケンス
+### 1. 正常系課金フロー
 
 ```mermaid
 sequenceDiagram
@@ -286,7 +296,7 @@ sequenceDiagram
 
 ---
 
-## 2. 状態遷移
+## 2. 課金状態遷移
 
 ```mermaid
 stateDiagram-v2
@@ -329,18 +339,22 @@ sequenceDiagram
     participant Apple as Apple
     participant API as Rails API
     participant DB as Database
+    participant Queue as Job Queue (Sidekiq)
+    participant Worker as Background Worker
 
-    Note over Apple, DB: Webhookが先に到達するケース
+    Note over Apple, Worker: Webhookが先に到達するケース
 
     Apple->>API: POST /api/v1/webhooks/apple<br/>{ type: PURCHASE, transaction_id: "txn_abc" }
-    API->>DB: subscriptions を active で Upsert<br/>（レコードなければ新規作成）
-    API-->>Apple: 200 OK
+    API->>DB: webhook_logs に保存（重複チェック）
+    API->>Queue: AppleWebhookProcessorJob をエンキュー
+    API-->>Apple: 200 OK（即時返却）
+    Worker->>DB: subscriptions を active で Upsert<br/>（レコードなければ新規作成）
 
     Note over User, DB: 後からクライアント通知が到達
 
     User->>API: POST /api/v1/subscriptions<br/>{ transaction_id: "txn_abc", ... }
     API->>DB: find_or_initialize_by(transaction_id)<br/>→ 既に active → provisional に戻さない
-    API-->>User: 201 Created / 200 OK<br/>{ status: "active" }
+    API-->>User: 201 Created<br/>{ status: "active" }
 ```
 
 ---
